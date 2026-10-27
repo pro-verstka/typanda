@@ -87,11 +87,13 @@ final class ResultState {
 @MainActor
 enum Corrector {
     private static var task: Task<Void, Never>?
+    private static var target: NSRunningApplication?
     private static let state = ResultState()
     private static let panel = makePanel()
 
     static func run() {
         task?.cancel()
+        target = NSWorkspace.shared.frontmostApplication
         task = Task {
             guard AXIsProcessTrusted() else {
                 return show(error: "Allow Typanda in System Settings → Privacy & Security → Accessibility")
@@ -114,22 +116,29 @@ enum Corrector {
         }
     }
 
+    static func apply() {
+        guard let fixed = state.fixed else { return }
+        panel.close()
+        Task {
+            let pasteboard = NSPasteboard.general
+            let saved = snapshot()
+            pasteboard.clearContents()
+            pasteboard.setString(fixed, forType: .string)
+            target?.activate()
+            try? await Task.sleep(for: .milliseconds(100))
+            press(kVK_ANSI_V)
+            // Приложение читает буфер после ⌘V асинхронно — восстановим раньше, вставится старое содержимое
+            try? await Task.sleep(for: .milliseconds(500))
+            pasteboard.clearContents()
+            pasteboard.writeObjects(saved)
+        }
+    }
+
     private static func copySelection() async -> String? {
         let pasteboard = NSPasteboard.general
-        let saved: [NSPasteboardItem] = pasteboard.pasteboardItems?.map { item in
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) { copy.setData(data, forType: type) }
-            }
-            return copy
-        } ?? []
+        let saved = snapshot()
         let before = pasteboard.changeCount
-        let source = CGEventSource(stateID: .combinedSessionState)
-        for keyDown in [true, false] {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: keyDown)
-            event?.flags = .maskCommand
-            event?.post(tap: .cghidEventTap)
-        }
+        press(kVK_ANSI_C)
         for _ in 0..<20 {
             try? await Task.sleep(for: .milliseconds(25))
             if pasteboard.changeCount != before {
@@ -143,6 +152,25 @@ enum Corrector {
         return nil
     }
 
+    private static func snapshot() -> [NSPasteboardItem] {
+        NSPasteboard.general.pasteboardItems?.map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) { copy.setData(data, forType: type) }
+            }
+            return copy
+        } ?? []
+    }
+
+    private static func press(_ key: Int) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for keyDown in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key), keyDown: keyDown)
+            event?.flags = .maskCommand
+            event?.post(tap: .cghidEventTap)
+        }
+    }
+
     private static func show(original: String? = nil, fixed: String? = nil, error: String? = nil) {
         state.original = original
         state.fixed = fixed
@@ -150,6 +178,8 @@ enum Corrector {
         guard error != nil || UserDefaults.standard.bool(forKey: Prefs.showResult) else { return }
         if !panel.isVisible { panel.center() }
         panel.orderFrontRegardless()
+        // Nonactivating-панель забирает клавиатуру, не активируя приложение: Enter/Esc не уйдут в исходное окно
+        panel.makeKey()
     }
 
     private static func makePanel() -> NSPanel {
@@ -166,7 +196,7 @@ enum Corrector {
         panel.level = .floating
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        let host = NSHostingView(rootView: ResultView(state: state) { [weak panel] in panel?.close() })
+        let host = NSHostingView(rootView: ResultView(state: state, close: { [weak panel] in panel?.close() }, apply: apply))
         host.sizingOptions = [.minSize]
         let glass = NSGlassEffectView()
         glass.cornerRadius = 22
@@ -193,6 +223,7 @@ final class ResultPanel: NSPanel {
 struct ResultView: View {
     let state: ResultState
     let close: () -> Void
+    let apply: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -216,15 +247,34 @@ struct ResultView: View {
                         if let fixed = state.fixed {
                             section("Corrected", Text(Diff.highlighted(state.original ?? "", fixed)))
                         } else {
-                            ProgressView().controlSize(.small)
+                            section("Corrected", skeleton)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if state.fixed != nil {
+                    HStack {
+                        Spacer()
+                        Button("Replace", action: apply).keyboardShortcut(.defaultAction)
+                    }
                 }
             }
         }
         .padding(20)
         .frame(minWidth: 360, maxWidth: .infinity, minHeight: 160, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var skeleton: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            ForEach(0..<3) { line in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(.quaternary)
+                    .frame(height: 12)
+                    .padding(.trailing, line == 2 ? 120 : 0)
+            }
+        }
+        .padding(.vertical, 2)
+        .phaseAnimator([1, 0.4]) { content, opacity in content.opacity(opacity) }
     }
 
     private func section(_ title: String, _ content: some View) -> some View {

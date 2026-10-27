@@ -13,6 +13,7 @@ Spelling and grammar fixer in your macOS menu bar. Select text in any app, press
 1. Settings → pick OpenAI or Anthropic, paste an API key, choose a model.
 2. Allow Typanda in System Settings → Privacy & Security → Accessibility.
 3. Select text and press the hotkey (⌥⌘G by default, a double ⇧ works too).
+4. Press Enter in the result window to replace the selection (or insert at the cursor), Esc to dismiss.
 
 ## Releases
 
