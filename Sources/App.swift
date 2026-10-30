@@ -34,7 +34,6 @@ struct MenuContent: View {
 
     var body: some View {
         Button("Settings…") { Windows.show(Windows.settings) }.keyboardShortcut(",")
-        Button("About Typanda") { Windows.show(Windows.about) }
         Button(update.title) { updates.checkForUpdate(manual: true) }.disabled(!update.enabled)
         Divider()
         Button("Quit") { NSApp.terminate(nil) }.keyboardShortcut("q")
@@ -57,8 +56,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 enum Windows {
-    static let settings = make("Typanda Settings", SettingsView())
-    static let about = make("About Typanda", AboutView())
+    static let settings: NSWindow = {
+        let window = make("Typanda Settings", SettingsView())
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+        return window
+    }()
 
     private static func make(_ title: String, _ view: some View) -> NSWindow {
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
@@ -77,52 +82,90 @@ enum Windows {
 }
 
 struct AboutView: View {
+    @AppStorage("updateAutoCheckEnabled") private var autoCheckUpdates = true
+    private let updates = UpdateService.shared
     private let repositoryURL = URL(string: "https://github.com/pro-verstka/typanda")!
 
-    private let versionText: String = {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        return version ?? "Unknown"
-    }()
+    private var versionText: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        return build.isEmpty ? version : "\(version) (\(build))"
+    }
+
+    private var updateButton: (title: String, enabled: Bool) {
+        switch updates.state {
+        case .idle: ("Check for Updates", true)
+        case .checking: ("Checking…", false)
+        case .available(let release): ("Update to \(release.version)", true)
+        case .downloading: ("Downloading…", false)
+        case .installing: ("Installing…", false)
+        case .failed: ("Retry Update", true)
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 96, height: 96)
+        ScrollView {
+            VStack(spacing: 32) {
+                VStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable().frame(width: 96, height: 96)
+                        .padding(.bottom, 2)
+                    Text("Typanda").font(.system(size: 22, weight: .semibold))
+                    Text(versionText).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                    Text("Correct or translate selected text in any app with a hotkey.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text("Made by pro-verstka")
+                        .font(.system(size: 11)).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity)
 
-            Text("Typanda")
-                .font(.title2.bold())
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("Updates")
+                        Spacer()
+                        Button(updateButton.title) { updates.checkForUpdate(manual: true) }
+                            .disabled(!updateButton.enabled)
+                    }
+                    .padding(12)
+                    Divider().padding(.horizontal, 12)
+                    HStack {
+                        Text("Automatically check for updates")
+                        Spacer()
+                        Toggle("Automatically check for updates", isOn: $autoCheckUpdates)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                    }
+                    .padding(12)
+                }
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
 
-            Text("Correct or translate selected text in any app with a hotkey.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Divider()
-
-            HStack {
-                Text("Version")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(versionText)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Links").font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 10)
+                    VStack(spacing: 0) {
+                        link("GitHub", symbol: "globe", destination: repositoryURL)
+                        Divider().padding(.horizontal, 12)
+                        link("Changelog", symbol: "sparkles", destination: repositoryURL.appendingPathComponent("releases"))
+                    }
+                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                }
             }
-
-            HStack {
-                Text("Author")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("pro-verstka")
-            }
-
-            HStack {
-                Text("Git")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Link("github.com/pro-verstka/typanda", destination: repositoryURL)
-            }
+            .padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 24)
         }
-        .padding(24)
-        .frame(width: 360)
+    }
+
+    private func link(_ title: String, symbol: String, destination: URL) -> some View {
+        Link(destination: destination) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 16)).frame(width: 20)
+                Text(title)
+                Spacer()
+                Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(.tertiary)
+            }
+            .padding(12).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

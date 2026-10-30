@@ -10,7 +10,7 @@ Spelling, grammar and translation assistant in your macOS menu bar. Select text 
 
 ## Setup
 
-1. Settings → configure Correction and Translation separately: pick OpenAI or Anthropic, paste an API key, and choose a model for each. API keys are shared per provider.
+1. Settings → Connections: add API keys for OpenAI or Anthropic. Then choose a provider and model separately in Correction and Translation. API keys are shared per provider.
 2. Allow Typanda in System Settings → Privacy & Security → Accessibility.
 3. Select text and press ⌥⌘G to correct it or ⌥⌘T to translate it. Both shortcuts are configurable; double-tapping a modifier works too.
 4. In Translation settings, set the target language (English by default) and customize the translator system prompt.

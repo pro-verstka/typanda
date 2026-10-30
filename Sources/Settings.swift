@@ -91,26 +91,165 @@ enum Keychain {
     }
 }
 
+private enum SettingsPage: String, CaseIterable {
+    case general = "General", hotkeys = "Hotkeys", connections = "Connections"
+    case correction = "Correction", translation = "Translation", about = "About"
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape.fill"
+        case .hotkeys: "command"
+        case .connections: "network"
+        case .correction: "text.badge.checkmark"
+        case .translation: "character.bubble.fill"
+        case .about: "info.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .general, .about: .gray
+        case .hotkeys: .purple
+        case .connections: .teal
+        case .correction: .blue
+        case .translation: .orange
+        }
+    }
+}
+
 struct SettingsView: View {
+    @State private var selection: SettingsPage = .general
+    @State private var connectionRevision = 0
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable().frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Typanda").font(.system(size: 14, weight: .semibold))
+                        Text("Settings").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 6)
+                VStack(spacing: 4) {
+                    ForEach(SettingsPage.allCases.filter { $0 != .about }, id: \.self) { page in
+                        sidebarItem(page)
+                    }
+                }
+                Spacer()
+                sidebarItem(.about)
+            }
+            .padding(.horizontal, 10).padding(.top, 54).padding(.bottom, 20)
+            .frame(width: 220)
+            .frame(maxHeight: .infinity)
+            .background(.regularMaterial)
+            Divider()
+            VStack(alignment: .leading, spacing: 0) {
+                Text(selection.rawValue)
+                    .font(.system(size: 16, weight: .semibold))
+                    .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 14)
+                pageContent
+                    .id(selection)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .ignoresSafeArea()
+        .frame(width: 840, height: 620)
+    }
+
+    private func sidebarItem(_ page: SettingsPage) -> some View {
+        Button { selection = page } label: {
+            HStack(spacing: 9) {
+                Image(systemName: page.symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(page.color.gradient, in: RoundedRectangle(cornerRadius: 6))
+                Text(page.rawValue).font(.system(size: 14))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6).padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .background(selection == page ? Color.primary.opacity(0.09) : .clear,
+                        in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selection == page ? .isSelected : [])
+    }
+
+    @ViewBuilder private var pageContent: some View {
+        switch selection {
+        case .general:
+            GeneralSettingsView()
+        case .hotkeys:
+            Form {
+                Section {
+                    HotkeyRecorder(action: .correction, title: "Correct selected text")
+                    HotkeyRecorder(action: .translation, title: "Translate selected text")
+                } header: {
+                    Text("Global shortcuts")
+                } footer: {
+                    Text("Click a shortcut to change it. Press a key combination or double-tap a modifier. Press Esc to cancel.")
+                }
+            }
+            .formStyle(.grouped)
+        case .connections:
+            Form {
+                ForEach(Provider.allCases, id: \.self) { provider in
+                    Section(provider.rawValue) {
+                        ProviderConnectionView(provider: provider) { connectionRevision += 1 }
+                    }
+                }
+                Section {
+                    Text("API keys are stored in Keychain and shared by correction and translation.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+        case .correction:
+            ActionSettingsView(action: .correction, connectionRevision: connectionRevision)
+        case .translation:
+            ActionSettingsView(action: .translation, connectionRevision: connectionRevision)
+        case .about:
+            AboutView()
+        }
+    }
+}
+
+struct ProviderConnectionView: View {
+    let provider: Provider
+    let onChange: () -> Void
+    @State private var apiKey = ""
+
+    var body: some View {
+        SecureField("API key", text: $apiKey)
+            .onAppear { apiKey = Keychain.get(provider.rawValue) }
+            .onChange(of: apiKey) {
+                guard apiKey != Keychain.get(provider.rawValue) else { return }
+                Keychain.set(provider.rawValue, apiKey)
+                onChange()
+            }
+    }
+}
+
+struct GeneralSettingsView: View {
     @AppStorage(Prefs.showIcon) private var showIcon = true
     @AppStorage(Prefs.showResult) private var showResult = true
     @AppStorage(Prefs.copyResult) private var copyResult = true
-    @AppStorage("updateAutoCheckEnabled") private var autoCheckUpdates = true
     @State private var launchAtLogin = Self.isLoginItem
 
     private static var isLoginItem: Bool { [.enabled, .requiresApproval].contains(SMAppService.mainApp.status) }
 
     var body: some View {
         Form {
-            Section("General") {
+            Section("App") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
                 Toggle(isOn: $showIcon) {
                     Text("Show menu bar icon")
                     Text("Without the icon, open Typanda again to see Settings")
-                }
-                Toggle(isOn: $autoCheckUpdates) {
-                    Text("Check for updates automatically")
-                    Text("Checks once every 24 hours when enabled.")
                 }
             }
             Section("Result") {
@@ -120,15 +259,8 @@ struct SettingsView: View {
                     Text("Errors are always shown")
                 }
             }
-            Section("Correction") {
-                ActionSettingsView(action: .correction)
-            }
-            Section("Translation") {
-                ActionSettingsView(action: .translation)
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 800)
         .onChange(of: launchAtLogin) {
             let service = SMAppService.mainApp
             try? launchAtLogin ? service.register() : service.unregister()
@@ -146,11 +278,12 @@ struct ActionSettingsView: View {
     @AppStorage private var openaiModel: String
     @AppStorage private var anthropicModel: String
     @AppStorage(Prefs.targetLanguage) private var targetLanguage = "English"
-    @State private var apiKey = ""
+    let connectionRevision: Int
     @State private var models: [String] = []
 
-    init(action: TextAction) {
+    init(action: TextAction, connectionRevision: Int) {
         self.action = action
+        self.connectionRevision = connectionRevision
         _provider = AppStorage(wrappedValue: .openai, action.providerKey)
         _prompt = AppStorage(wrappedValue: "", action.promptKey)
         _openaiModel = AppStorage(wrappedValue: "", action.modelKey(.openai))
@@ -160,37 +293,37 @@ struct ActionSettingsView: View {
     private var model: Binding<String> { provider == .openai ? $openaiModel : $anthropicModel }
 
     var body: some View {
-        HotkeyRecorder(action: action)
-        Picker("Provider", selection: $provider) {
-            ForEach(Provider.allCases, id: \.self) { Text($0.rawValue) }
+        Form {
+            Section("Model") {
+                Picker("Provider", selection: $provider) {
+                    ForEach(Provider.allCases, id: \.self) { Text($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+                if models.isEmpty {
+                    TextField("Model", text: model)
+                } else {
+                    Picker("Model", selection: model) {
+                        ForEach(models.contains(model.wrappedValue) ? models : [model.wrappedValue] + models, id: \.self) { Text($0) }
+                    }
+                }
+                Text("Manage API keys in Connections.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            if action == .translation {
+                Section("Language") {
+                    TextField("Translate into", text: $targetLanguage)
+                }
+            }
+            Section("System prompt") {
+                TextEditor(text: $prompt).font(.body).frame(minHeight: 180)
+            }
         }
-        .pickerStyle(.segmented)
-        SecureField("API key", text: $apiKey)
-            .onChange(of: apiKey) {
-                if apiKey != Keychain.get(provider.rawValue) { Keychain.set(provider.rawValue, apiKey) }
-            }
-        if models.isEmpty {
-            TextField("Model", text: model)
-        } else {
-            Picker("Model", selection: model) {
-                ForEach(models.contains(model.wrappedValue) ? models : [model.wrappedValue] + models, id: \.self) { Text($0) }
-            }
+        .formStyle(.grouped)
+        .task(id: provider.rawValue + String(connectionRevision)) {
+            models = []
+            let loaded = (try? await LLM.models(provider)) ?? []
+            if !Task.isCancelled { models = loaded }
         }
-        if action == .translation {
-            TextField("Translate into", text: $targetLanguage)
-        }
-        LabeledContent("System prompt") { EmptyView() }
-        TextEditor(text: $prompt).font(.body).frame(minHeight: 130)
-            .onAppear { apiKey = Keychain.get(provider.rawValue) }
-            .onChange(of: provider) {
-                models = []
-                apiKey = Keychain.get(provider.rawValue)
-            }
-            .task(id: provider.rawValue + apiKey) {
-                let selectedProvider = provider
-                let loaded = (try? await LLM.models(selectedProvider)) ?? []
-                if !Task.isCancelled { models = loaded }
-            }
     }
 }
 
@@ -208,17 +341,19 @@ func modifierSymbols(_ flags: NSEvent.ModifierFlags) -> String {
 
 struct HotkeyRecorder: View {
     let action: TextAction
+    let title: String
     @AppStorage private var label: String
 
-    init(action: TextAction) {
+    init(action: TextAction, title: String = "Shortcut") {
         self.action = action
+        self.title = title
         _label = AppStorage(wrappedValue: "", action.hotkeyLabelKey)
     }
     @State private var monitor: Any?
     @State private var failed = false
 
     var body: some View {
-        LabeledContent("Shortcut") {
+        LabeledContent(title) {
             HStack {
                 if failed { Text("Shortcut is taken").foregroundStyle(.red) }
                 Button(monitor == nil ? label : "Press a shortcut or double-tap a modifier…", action: toggle)
