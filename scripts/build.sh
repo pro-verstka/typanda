@@ -4,8 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="Typanda"
-APP_VERSION="1.1.0"
-APP_BUILD="2"
+APP_VERSION="1.2.0"
+APP_BUILD="3"
 
 BUILD_DIR="$PWD/build"
 APP="$BUILD_DIR/$APP_NAME.app"

@@ -29,11 +29,11 @@ enum LLM {
         return ((json?["data"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }.sorted()
     }
 
-    static func correct(_ text: String) async throws -> String {
+    static func process(_ text: String, action: TextAction) async throws -> String {
         let defaults = UserDefaults.standard
-        let provider = Provider(rawValue: defaults.string(forKey: Prefs.provider) ?? "") ?? .openai
-        let model = defaults.string(forKey: Prefs.model(provider)) ?? ""
-        let prompt = defaults.string(forKey: Prefs.prompt) ?? ""
+        let provider = Provider(rawValue: defaults.string(forKey: action.providerKey) ?? "") ?? .openai
+        let model = defaults.string(forKey: action.modelKey(provider)) ?? ""
+        let prompt = try systemPrompt(action, defaults: defaults)
         guard !Keychain.get(provider.rawValue).isEmpty else { throw Failure("Add your \(provider.rawValue) API key in Settings") }
 
         let body: [String: Any] = switch provider {
@@ -48,6 +48,14 @@ enum LLM {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         return try parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0, provider: provider)
+    }
+
+    static func systemPrompt(_ action: TextAction, defaults: UserDefaults = .standard) throws -> String {
+        let prompt = defaults.string(forKey: action.promptKey) ?? ""
+        guard action == .translation else { return prompt }
+        let language = (defaults.string(forKey: Prefs.targetLanguage) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !language.isEmpty else { throw Failure("Choose a target language in Translation settings") }
+        return prompt + "\n\nTarget language: " + language
     }
 
     static func parse(_ data: Data, status: Int, provider: Provider) throws -> String {
@@ -79,6 +87,7 @@ enum LLM {
 
 @Observable
 final class ResultState {
+    var action: TextAction = .correction
     var original: String?
     var fixed: String?
     var error: String?
@@ -91,8 +100,9 @@ enum Corrector {
     private static let state = ResultState()
     private static let panel = makePanel()
 
-    static func run() {
+    static func run(_ action: TextAction = .correction) {
         task?.cancel()
+        state.action = action
         target = NSWorkspace.shared.frontmostApplication
         task = Task {
             guard AXIsProcessTrusted() else {
@@ -101,9 +111,10 @@ enum Corrector {
             guard let text = await copySelection(), !text.isEmpty else {
                 return show(error: "Could not copy the selected text")
             }
+            guard !Task.isCancelled else { return }
             show(original: text)
             do {
-                let fixed = try await LLM.correct(text)
+                let fixed = try await LLM.process(text, action: action)
                 try Task.checkCancellation()
                 if UserDefaults.standard.bool(forKey: Prefs.copyResult) {
                     NSPasteboard.general.clearContents()
@@ -228,7 +239,7 @@ struct ResultView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("Typanda", systemImage: "text.badge.checkmark").font(.headline)
+                Label(state.action.title, systemImage: state.action == .correction ? "text.badge.checkmark" : "character.bubble").font(.headline)
                 Spacer()
                 Button(action: close) {
                     Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
@@ -245,9 +256,13 @@ struct ResultView: View {
                         section("Original", Text(state.original ?? "").foregroundStyle(.secondary))
                         Divider()
                         if let fixed = state.fixed {
-                            section("Corrected", Text(Diff.highlighted(state.original ?? "", fixed)))
+                            if state.action == .translation {
+                                section("Translation", Text(fixed))
+                            } else {
+                                section("Corrected", Text(Diff.highlighted(state.original ?? "", fixed)))
+                            }
                         } else {
-                            section("Corrected", skeleton)
+                            section(state.action == .correction ? "Corrected" : "Translation", skeleton)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

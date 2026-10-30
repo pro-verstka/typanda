@@ -15,6 +15,25 @@ enum SelfTest {
         precondition(parse(.openai, "<html>Bad Gateway</html>", 502) == "ERR HTTP 502")
         precondition(parse(.anthropic, #"{"content":[]}"#) == "ERR The model returned an empty response")
 
+        let suite = "Typanda.SelfTest." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("Proofread only", forKey: TextAction.correction.promptKey)
+        defaults.set("Translate faithfully", forKey: TextAction.translation.promptKey)
+        defaults.set("  Russian  ", forKey: Prefs.targetLanguage)
+        precondition(try! LLM.systemPrompt(.correction, defaults: defaults) == "Proofread only")
+        precondition(try! LLM.systemPrompt(.translation, defaults: defaults) == "Translate faithfully\n\nTarget language: Russian")
+        defaults.set(" \n ", forKey: Prefs.targetLanguage)
+        do {
+            _ = try LLM.systemPrompt(.translation, defaults: defaults)
+            preconditionFailure("Empty translation language must fail")
+        } catch {}
+        for provider in Provider.allCases {
+            precondition(TextAction.correction.modelKey(provider) != TextAction.translation.modelKey(provider))
+        }
+        precondition(TextAction.correction.providerKey == Prefs.provider)
+        precondition(TextAction.correction.hotkeyCodeKey == Prefs.hotkeyCode)
+
         precondition(Diff.marked("Превет мир", "Привет, мир").filter(\.1).map(\.0) == ["Привет", ","])
         precondition(Diff.marked("Всё ок.", "Всё ок.").allSatisfy { !$0.1 })
 

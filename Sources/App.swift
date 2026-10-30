@@ -43,7 +43,7 @@ struct MenuContent: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        HotKey.install { Corrector.run() }
+        HotKey.install { Corrector.run($0) }
         HotKey.register()
         AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
         UpdateService.shared.startPeriodicChecks()
@@ -93,7 +93,7 @@ struct AboutView: View {
             Text("Typanda")
                 .font(.title2.bold())
 
-            Text("Fix spelling and grammar of the selected text in any app with a hotkey.")
+            Text("Correct or translate selected text in any app with a hotkey.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

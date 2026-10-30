@@ -2,7 +2,7 @@
 
 # Typanda
 
-Spelling and grammar fixer in your macOS menu bar. Select text in any app, press a hotkey — Typanda fixes typos and grammar without rewriting your style and copies the result to the clipboard.
+Spelling, grammar and translation assistant in your macOS menu bar. Select text in any app, press a hotkey — Typanda fixes typos and grammar without rewriting your style and copies the result to the clipboard.
 
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5-orange)
@@ -10,10 +10,11 @@ Spelling and grammar fixer in your macOS menu bar. Select text in any app, press
 
 ## Setup
 
-1. Settings → pick OpenAI or Anthropic, paste an API key, choose a model.
+1. Settings → configure Correction and Translation separately: pick OpenAI or Anthropic, paste an API key, and choose a model for each. API keys are shared per provider.
 2. Allow Typanda in System Settings → Privacy & Security → Accessibility.
-3. Select text and press the hotkey (⌥⌘G by default, a double ⇧ works too).
-4. Press Enter in the result window to replace the selection (or insert at the cursor), Esc to dismiss.
+3. Select text and press ⌥⌘G to correct it or ⌥⌘T to translate it. Both shortcuts are configurable; double-tapping a modifier works too.
+4. In Translation settings, set the target language (English by default) and customize the translator system prompt.
+5. Press Enter in the result window to replace the selection (or insert at the cursor), Esc to dismiss.
 
 ## Releases
 
